@@ -14,8 +14,8 @@ sessions_data = {}
 USERS = {
     "avery": {"password": "avery123", "name": "Avery", "role": "user"},
     "havish": {"password": "havish123", "name": "Havish", "role": "user"},
-    "ethan": {"password": "ethan123", "name": "Ethan", "role": "admin"},
-    "ashvath": {"password": "ashvath123", "name": "Ashvath", "role": "owner"},
+    "ethan": {"password": "ethan123123123", "name": "Ethan", "role": "admin"},
+    "ashvath": {"password": "ashvath123123123", "name": "Ashvath", "role": "owner"},
     "kavya": {"password": "kavya123", "name": "Kavya", "role": "user"},
     "teju": {"password": "teju123", "name": "Teju", "role": "user"},
     "lebudda": {"password": "lebudda123", "name": "Lebudda", "role": "user"},
