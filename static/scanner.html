@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>FTC Dashboard Scanner</title>
+    <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            text-align: center;
+            padding: 2em;
+            background: #111;
+            color: #fff;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        h1 {
+            color: #fff;
+            margin-bottom: 30px;
+        }
+
+        .scanner-container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: #222;
+            padding: 30px;
+            border-radius: 12px;
+            border: 2px solid #555;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        #reader {
+            width: 100%;
+            max-width: 300px;
+            margin: 20px auto;
+            border: 2px solid #555;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #333;
+        }
+
+        .duration-control {
+            margin: 20px 0;
+            padding: 15px;
+            background: #1a1a1a;
+            border-radius: 8px;
+            border: 1px solid #555;
+        }
+
+        .duration-control label {
+            color: #aaa;
+            font-size: 0.9em;
+            margin-right: 10px;
+        }
+
+        input[type="number"] {
+            padding: 8px 12px;
+            font-size: 1em;
+            width: 80px;
+            text-align: center;
+            border-radius: 5px;
+            border: 2px solid #555;
+            background: #333;
+            color: #fff;
+            margin: 0 5px;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #22c55e;
+        }
+
+        button {
+            padding: 12px 24px;
+            margin: 10px 5px;
+            font-size: 1.1em;
+            border-radius: 8px;
+            border: none;
+            background: #22c55e;
+            color: white;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        button:hover:not(:disabled) {
+            background: #16a34a;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        #unlockBtn {
+            background: #ef4444;
+        }
+
+        #unlockBtn:hover:not(:disabled) {
+            background: #dc2626;
+        }
+
+        #status {
+            margin-top: 20px;
+            padding: 15px;
+            font-size: 1.2em;
+            background: #1a1a1a;
+            border-radius: 8px;
+            border: 2px solid #555;
+            min-height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #debug {
+            margin-top: 15px;
+            padding: 10px;
+            font-size: 0.85em;
+            color: #666;
+            background: #1a1a1a;
+            border-radius: 6px;
+            border: 1px solid #333;
+            word-break: break-all;
+            text-align: left;
+            font-family: monospace;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+
+        .button-group {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>FTC Visa Scanner</h1>
+
+    <div class="scanner-container">
+        <div id="reader"></div>
+
+        <div class="duration-control">
+            <label for="durationInput">Duration:</label>
+            <input type="number" id="durationInput" value="10" min="10" step="10">
+            <label>seconds</label>
+        </div>
+
+        <div class="button-group">
+            <button id="startScan">📷 Start Scan</button>
+            <button id="unlockBtn" disabled>🔓 Unlock</button>
+        </div>
+
+        <div id="status">Idle</div>
+        <div id="debug"></div>
+    </div>
+
+    <script>
+        let lastScanned = null;
+        let extractedSessionId = null;
+        const reader = new Html5Qrcode("reader");
+        let scanning = false;
+
+        const startScanBtn = document.getElementById("startScan");
+        const unlockBtn = document.getElementById("unlockBtn");
+        const statusEl = document.getElementById("status");
+        const debugEl = document.getElementById("debug");
+
+        // Extract session_id from URL or direct text
+        function extractSessionId(text) {
+            debugEl.innerText = `Raw scan: ${text}`;
+
+            try {
+                // Try to parse as URL
+                const url = new URL(text);
+                const params = new URLSearchParams(url.search);
+                const sessionId = params.get('session_id');
+                if (sessionId) {
+                    debugEl.innerText += `\nExtracted from URL: ${sessionId}`;
+                    return sessionId;
+                }
+            } catch (e) {
+                debugEl.innerText += `\nNot a URL: ${e.message}`;
+            }
+
+            // Fallback: extract UUID pattern
+            const match = text.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/i);
+            if (match) {
+                debugEl.innerText += `\nExtracted via regex: ${match[0]}`;
+                return match[0];
+            }
+
+            // Last resort: use the whole text if it looks like a session ID
+            if (/^[a-zA-Z0-9\-]{8,}$/.test(text.trim())) {
+                debugEl.innerText += `\nUsing as-is: ${text.trim()}`;
+                return text.trim();
+            }
+
+            debugEl.innerText += `\nFailed to extract session ID`;
+            return null;
+        }
+
+        startScanBtn.addEventListener("click", async () => {
+            if (scanning) return;
+            scanning = true;
+            statusEl.innerText = "Scanning...";
+            unlockBtn.disabled = true;
+            debugEl.innerText = "";
+
+            try {
+                await reader.start(
+                    { facingMode: "environment" },
+                    { fps: 10, qrbox: 250 },
+                    async (decodedText) => {
+                        lastScanned = decodedText.trim();
+                        extractedSessionId = extractSessionId(lastScanned);
+
+                        if (extractedSessionId) {
+                            // Fetch the name for this session
+                            try {
+                                const res = await fetch(`${window.location.origin}/session_status/${extractedSessionId}`);
+                                const data = await res.json();
+                                const name = data.name || "Unknown";
+                                statusEl.innerText = `✅ Scanned: ${name}`;
+                            } catch (e) {
+                                statusEl.innerText = "Scanned: " + extractedSessionId.substring(0, 8) + "...";
+                            }
+                            unlockBtn.disabled = false;
+                        } else {
+                            statusEl.innerText = "❌ Invalid QR code format";
+                            unlockBtn.disabled = true;
+                        }
+
+                        scanning = false;
+                        reader.stop().catch(() => { });
+                    },
+                    (errorMessage) => {
+                        // optional scanning feedback
+                    }
+                );
+            } catch (err) {
+                console.error("Unable to start scanning", err);
+                statusEl.innerText = "❌ Error starting camera";
+                debugEl.innerText = err.message;
+                scanning = false;
+            }
+        });
+
+        unlockBtn.addEventListener("click", async () => {
+            if (!extractedSessionId) {
+                statusEl.innerText = "❌ Error: No session ID extracted";
+                return;
+            }
+
+            if (!confirm("Unlock this session?")) return;
+
+            try {
+                const duration = parseInt(document.getElementById("durationInput").value) || 10;
+
+                const payload = {
+                    session_id: extractedSessionId,
+                    duration: duration
+                };
+
+                debugEl.innerText = `Sending: ${JSON.stringify(payload)}`;
+
+                const res = await fetch(`${window.location.origin}/approve`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'ngrok-skip-browser-warning': 'true'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                debugEl.innerText += `\nResponse status: ${res.status}`;
+
+                const data = await res.json();
+                debugEl.innerText += `\nResponse data: ${JSON.stringify(data)}`;
+
+                if (data.status === "approved") {
+                    // Fetch the name to display in success message
+                    try {
+                        const statusRes = await fetch(`${window.location.origin}/session_status/${extractedSessionId}`);
+                        const statusData = await statusRes.json();
+                        const name = statusData.name || "Session";
+                        statusEl.innerText = `🎉 ${name} Unlocked for ${duration} seconds!`;
+                    } catch (e) {
+                        statusEl.innerText = `🎉 Unlocked for ${duration} seconds!`;
+                    }
+                    unlockBtn.disabled = true;
+                } else {
+                    statusEl.innerText = "❌ Error: " + (data.error || "Unknown");
+                }
+            } catch (e) {
+                statusEl.innerText = "❌ Error: " + e.message;
+                debugEl.innerText += `\nException: ${e.message}\n${e.stack}`;
+                console.error('Full error:', e);
+            }
+        });
+    </script>
+</body>
+
+</html>

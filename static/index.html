@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>FTC Visa Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            text-align: center;
+            padding: 2em;
+            background: #111;
+            color: #fff;
+        }
+
+        #qrsContainer {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .qr-card {
+            padding: 15px;
+            border: 2px solid #555;
+            border-radius: 12px;
+            background: #222;
+            color: #fff;
+            width: 180px;
+        }
+
+        .qr-card canvas {
+            margin-bottom: 10px;
+        }
+
+        .name {
+            font-size: 1.3em;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: #fff;
+        }
+
+        .status {
+            font-weight: bold;
+            font-size: 1.1em;
+            margin: 8px 0;
+        }
+
+        .status.locked {
+            color: #ef4444;
+        }
+
+        .status.unlocked {
+            color: #22c55e;
+        }
+
+        .timer {
+            font-size: 1.2em;
+            font-family: monospace;
+            color: #888;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>FTC Visa Dashboard</h1>
+    <div id="qrsContainer"></div>
+
+    <script>
+        const socket = io();
+        const qrs = {}; // store QR data and timers
+
+        async function loadQRs() {
+            const res = await fetch('/qrs');
+            const data = await res.json();
+            const container = document.getElementById('qrsContainer');
+            container.innerHTML = '';
+
+            data.forEach(qr => {
+                const card = document.createElement('div');
+                card.className = 'qr-card';
+                card.id = `card-${qr.session_id}`;
+
+                const nameEl = document.createElement('div');
+                nameEl.className = 'name';
+                nameEl.innerText = qr.name;
+
+                const canvas = document.createElement('canvas');
+                QRCode.toCanvas(canvas, qr.url, { width: 150 });
+
+                const statusEl = document.createElement('div');
+                statusEl.className = 'status locked';
+                statusEl.id = `status-${qr.session_id}`;
+                statusEl.innerText = 'LOCKED';
+
+                const timerEl = document.createElement('div');
+                timerEl.className = 'timer';
+                timerEl.id = `timer-${qr.session_id}`;
+                timerEl.innerText = '--:--';
+
+                card.appendChild(nameEl);
+                card.appendChild(canvas);
+                card.appendChild(statusEl);
+                card.appendChild(timerEl);
+                container.appendChild(card);
+
+                qrs[qr.session_id] = {
+                    name: qr.name,
+                    statusEl,
+                    timerEl,
+                    expiresAt: null,
+                    interval: null
+                };
+
+                updateSessionStatus(qr.session_id);
+            });
+        }
+
+        // Check backend for each QR session status
+        async function updateSessionStatus(session_id) {
+            try {
+                const res = await fetch(`/session_status/${session_id}`);
+                const data = await res.json();
+                const qr = qrs[session_id];
+
+                if (data.status === 'unlocked' && data.expires_at) {
+                    qr.statusEl.innerText = 'UNLOCKED';
+                    qr.statusEl.classList.remove('locked');
+                    qr.statusEl.classList.add('unlocked');
+                    qr.expiresAt = data.expires_at;
+
+                    if (qr.interval) clearInterval(qr.interval);
+                    qr.interval = setInterval(() => {
+                        const remaining = Math.floor(qr.expiresAt - Date.now() / 1000);
+                        if (remaining <= 0) {
+                            qr.statusEl.innerText = 'LOCKED';
+                            qr.statusEl.classList.remove('unlocked');
+                            qr.statusEl.classList.add('locked');
+                            qr.timerEl.innerText = '00:00';
+                            clearInterval(qr.interval);
+                        } else {
+                            const m = Math.floor(remaining / 60);
+                            const s = remaining % 60;
+                            qr.timerEl.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                        }
+                    }, 500);
+                } else {
+                    qr.statusEl.innerText = 'LOCKED';
+                    qr.statusEl.classList.remove('unlocked');
+                    qr.statusEl.classList.add('locked');
+                    qr.timerEl.innerText = '--:--';
+                }
+            } catch (e) {
+                console.error('Failed to fetch status', e);
+            }
+        }
+
+        // Listen for real-time unlocks via socket.io
+        socket.on('unlocked', msg => {
+            if (qrs[msg.session_id]) {
+                qrs[msg.session_id].expiresAt = msg.expires_at;
+                updateSessionStatus(msg.session_id);
+            }
+        });
+
+        loadQRs();
+    </script>
+</body>
+
+</html>

@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>FTC Visa Status</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+    <style>
+        body {
+            font-family: sans-serif;
+            text-align: center;
+            padding: 2em;
+            background: #111;
+            min-height: 100vh;
+            margin: 0;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            background: #222;
+            padding: 40px;
+            border-radius: 12px;
+            border: 2px solid #555;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        h1 {
+            color: #fff;
+            margin-bottom: 10px;
+        }
+
+        .welcome {
+            font-size: 1.5em;
+            color: #22c55e;
+            margin-bottom: 30px;
+        }
+
+        .qr-container {
+            background: #333;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            border: 2px solid #555;
+        }
+
+        canvas {
+            margin: 10px auto;
+            display: block;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+        }
+
+        .status-box {
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+            font-size: 1.3em;
+            font-weight: bold;
+            border: 2px solid;
+        }
+
+        .status-box.locked {
+            background: #2a1a1a;
+            color: #ef4444;
+            border-color: #ef4444;
+        }
+
+        .status-box.unlocked {
+            background: #1a2a1a;
+            color: #22c55e;
+            border-color: #22c55e;
+        }
+
+        .timer {
+            font-size: 2em;
+            font-family: monospace;
+            color: #888;
+            margin: 10px 0;
+        }
+
+        .logout-btn {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+
+        .logout-btn:hover {
+            background: #dc2626;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🔐 QR Unlock</h1>
+        <div class="welcome" id="welcome">Loading...</div>
+
+        <div class="qr-container">
+            <canvas id="qrCanvas"></canvas>
+        </div>
+
+        <div class="status-box locked" id="statusBox">
+            <div id="statusText">LOCKED</div>
+            <div class="timer" id="timer">--:--</div>
+        </div>
+
+        <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+
+    <script>
+        const socket = io();
+        let mySessionId = null;
+        let expiresAt = null;
+        let timerInterval = null;
+
+        async function loadMyStatus() {
+            try {
+                const res = await fetch('/my_status');
+                const data = await res.json();
+
+                document.getElementById('welcome').innerText = `Welcome, ${data.name}!`;
+                mySessionId = data.session_id;
+
+                // Generate QR code
+                QRCode.toCanvas(document.getElementById('qrCanvas'), data.url, { width: 250 });
+
+                updateStatus(data.status, data.expires_at);
+            } catch (e) {
+                console.error('Failed to load status', e);
+                document.getElementById('welcome').innerText = 'Error loading status';
+            }
+        }
+
+        function updateStatus(status, expires) {
+            const statusBox = document.getElementById('statusBox');
+            const statusText = document.getElementById('statusText');
+            const timerEl = document.getElementById('timer');
+
+            if (status === 'unlocked' && expires) {
+                statusBox.className = 'status-box unlocked';
+                statusText.innerText = 'UNLOCKED ✅';
+                expiresAt = expires;
+
+                if (timerInterval) clearInterval(timerInterval);
+                timerInterval = setInterval(() => {
+                    const remaining = Math.floor(expiresAt - Date.now() / 1000);
+                    if (remaining <= 0) {
+                        statusBox.className = 'status-box locked';
+                        statusText.innerText = 'LOCKED 🔒';
+                        timerEl.innerText = '00:00';
+                        clearInterval(timerInterval);
+                    } else {
+                        const m = Math.floor(remaining / 60);
+                        const s = remaining % 60;
+                        timerEl.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+                    }
+                }, 500);
+            } else {
+                statusBox.className = 'status-box locked';
+                statusText.innerText = 'LOCKED 🔒';
+                timerEl.innerText = '--:--';
+                if (timerInterval) clearInterval(timerInterval);
+            }
+        }
+
+        // Listen for real-time unlocks via socket.io
+        socket.on('unlocked', msg => {
+            if (msg.session_id === mySessionId) {
+                updateStatus('unlocked', msg.expires_at);
+            }
+        });
+
+        function logout() {
+            window.location.href = '/logout';
+        }
+
+        loadMyStatus();
+    </script>
+</body>
+
+</html>

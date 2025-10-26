@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>FTC Visa Login</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background: #111;
+            color: #fff;
+        }
+
+        .login-container {
+            background: #222;
+            padding: 40px;
+            border-radius: 12px;
+            border: 2px solid #555;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            width: 320px;
+        }
+
+        h1 {
+            margin: 0 0 30px 0;
+            text-align: center;
+            color: #fff;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            color: #aaa;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #555;
+            border-radius: 6px;
+            font-size: 16px;
+            box-sizing: border-box;
+            background: #333;
+            color: #fff;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #22c55e;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background: #22c55e;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #16a34a;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .error {
+            color: #ef4444;
+            margin-top: 10px;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .info {
+            margin-top: 20px;
+            padding: 15px;
+            background: #1a1a1a;
+            border-radius: 6px;
+            border: 1px solid #555;
+            font-size: 13px;
+            color: #888;
+        }
+
+        .info strong {
+            color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="login-container">
+        <h1>FTC Visa Login</h1>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" required autocomplete="username">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+            </div>
+            <button type="submit" id="loginBtn">Login</button>
+            <div id="error" class="error"></div>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById('loginForm');
+        const errorEl = document.getElementById('error');
+        const loginBtn = document.getElementById('loginBtn');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorEl.innerText = '';
+            loginBtn.disabled = true;
+            loginBtn.innerText = 'Logging in...';
+
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            try {
+                const res = await fetch(`${window.location.origin}/`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'ngrok-skip-browser-warning': 'true'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+
+                console.log('Response status:', res.status);
+                const data = await res.json();
+                console.log('Response data:', data);
+
+                if (data.status === 'ok') {
+                    window.location.href = '/status';
+                } else {
+                    errorEl.innerText = data.msg || 'Login failed';
+                    loginBtn.disabled = false;
+                    loginBtn.innerText = 'Login';
+                }
+            } catch (e) {
+                console.error('Login error:', e);
+                errorEl.innerText = 'Connection error: ' + e.message;
+                loginBtn.disabled = false;
+                loginBtn.innerText = 'Login';
+            }
+        });
+    </script>
+</body>
+
+</html>
