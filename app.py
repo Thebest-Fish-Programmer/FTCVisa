@@ -1,6 +1,7 @@
 from flask import Flask, send_from_directory, jsonify, request, session, redirect
 from flask_socketio import SocketIO
 import uuid, time
+import os
 
 app = Flask(__name__, static_folder='static')
 app.secret_key = "supersecretkey"
@@ -8,7 +9,8 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 
 # Pre-generate sessions with user accounts
 sessions_data = {}
-NGROK_HOST = "3533419bef85.ngrok-free.app"
+
+
 
 # User accounts with credentials
 USERS = {
@@ -99,7 +101,7 @@ def get_qrs():
         qrs.append({
             "session_id": sid,
             "name": sessions_data[sid]["name"],
-            "url": f"https://{NGROK_HOST}/scanner?session_id={sid}"
+            "url": f"{request.host_url}scanner?session_id={sid}"
         })
     return jsonify(qrs)
 
@@ -122,7 +124,7 @@ def my_status():
         return jsonify({
             "name": user["name"],
             "session_id": sid,
-            "url": f"https://{NGROK_HOST}/scanner?session_id={sid}",
+            "url": f"{request.host_url}scanner?session_id={sid}",
             "status": status,
             "expires_at": expires_at
         })
@@ -163,4 +165,5 @@ def handle_connect():
     print("Client connected")
 
 if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000, debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    socketio.run(app, host="0.0.0.0", port=port)
