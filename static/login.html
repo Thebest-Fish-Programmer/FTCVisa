@@ -136,23 +136,32 @@
             const password = document.getElementById('password').value;
 
             try {
-                const res = await fetch(`${window.location.origin}/`, {
+                const res = await fetch(`${window.location.origin}/login`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'ngrok-skip-browser-warning': 'true'
                     },
+                    credentials: 'include',
                     body: JSON.stringify({ username, password })
                 });
 
                 console.log('Response status:', res.status);
-                const data = await res.json();
-                console.log('Response data:', data);
+                const text = await res.text();
+                console.log('Response text:', text.substring(0, 200));
 
-                if (data.status === 'ok') {
-                    window.location.href = '/status';
-                } else {
-                    errorEl.innerText = data.msg || 'Login failed';
+                try {
+                    const data = JSON.parse(text);
+                    if (res.ok) {
+                        window.location.href = data.redirect;
+                    } else {
+                        errorEl.innerText = data.error || 'Login failed';
+                        loginBtn.disabled = false;
+                        loginBtn.innerText = 'Login';
+                    }
+                } catch (e) {
+                    console.error('JSON parse error:', e);
+                    errorEl.innerText = 'Server error';
                     loginBtn.disabled = false;
                     loginBtn.innerText = 'Login';
                 }

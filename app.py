@@ -1,5 +1,6 @@
 from flask import Flask, send_from_directory, jsonify, request, session, redirect
 from flask_socketio import SocketIO
+from functools import wraps
 import uuid, time
 import os
 
@@ -7,33 +8,30 @@ app = Flask(__name__, static_folder='static')
 app.secret_key = "supersecretkey"
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-# Pre-generate sessions with user accounts
 sessions_data = {}
 
-
-
-# User accounts with credentials
+# User accounts with credentials and roles
 USERS = {
-    "avery": {"password": "avery123", "name": "Avery"},
-    "havish": {"password": "havish123", "name": "Havish"},
-    "ethan": {"password": "ethan123", "name": "Ethan"},
-    "ashvath": {"password": "ashvath123", "name": "Ashvath"},
-    "kavya": {"password": "kavya123", "name": "Kavya"},
-    "teju": {"password": "teju123", "name": "Teju"},
-    "lebudda": {"password": "lebudda123", "name": "Lebudda"},
-    "goonvik": {"password": "goonvik123", "name": "Goonvik"},
-    "user9": {"password": "user9123", "name": "..."},
-    "user10": {"password": "user10123", "name": "..."},
-    "user11": {"password": "user11123", "name": "..."},
-    "user12": {"password": "user12123", "name": "..."},
-    "user13": {"password": "user13123", "name": "..."},
-    "user14": {"password": "user14123", "name": "..."},
-    "user15": {"password": "user15123", "name": "..."},
-    "user16": {"password": "user16123", "name": "..."},
-    "user17": {"password": "user17123", "name": "..."},
-    "user18": {"password": "user18123", "name": "..."},
-    "user19": {"password": "user19123", "name": "..."},
-    "user20": {"password": "user20123", "name": "..."}
+    "avery": {"password": "avery123", "name": "Avery", "role": "owner"},
+    "havish": {"password": "havish123", "name": "Havish", "role": "admin"},
+    "ethan": {"password": "ethan123", "name": "Ethan", "role": "user"},
+    "ashvath": {"password": "ashvath123", "name": "Ashvath", "role": "user"},
+    "kavya": {"password": "kavya123", "name": "Kavya", "role": "user"},
+    "teju": {"password": "teju123", "name": "Teju", "role": "user"},
+    "lebudda": {"password": "lebudda123", "name": "Lebudda", "role": "user"},
+    "goonvik": {"password": "goonvik123", "name": "Goonvik", "role": "user"},
+    "user9": {"password": "user9123", "name": "...", "role": "user"},
+    "user10": {"password": "user10123", "name": "...", "role": "user"},
+    "user11": {"password": "user11123", "name": "...", "role": "user"},
+    "user12": {"password": "user12123", "name": "...", "role": "user"},
+    "user13": {"password": "user13123", "name": "...", "role": "user"},
+    "user14": {"password": "user14123", "name": "...", "role": "user"},
+    "user15": {"password": "user15123", "name": "...", "role": "user"},
+    "user16": {"password": "user16123", "name": "...", "role": "user"},
+    "user17": {"password": "user17123", "name": "...", "role": "user"},
+    "user18": {"password": "user18123", "name": "...", "role": "user"},
+    "user19": {"password": "user19123", "name": "...", "role": "user"},
+    "user20": {"password": "user20123", "name": "...", "role": "user"}
 }
 
 # Create a session for each user
@@ -47,54 +45,99 @@ for username, user_info in USERS.items():
     }
     user_info["session_id"] = sid
 
-# --- Helper ---
+# --- Helpers ---
 def login_required(func):
-    from functools import wraps
     @wraps(func)
     def wrapper(*args, **kwargs):
-        if session.get("logged_in"):
-            return func(*args, **kwargs)
-        return redirect("/")
+        if not session.get("logged_in"):
+            return redirect("/")
+        return func(*args, **kwargs)
+    return wrapper
+
+def admin_required(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        print(f"DEBUG: session = {dict(session)}")
+        print(f"DEBUG: logged_in = {session.get('logged_in')}")
+        print(f"DEBUG: username = {session.get('username')}")
+        
+        if not session.get("logged_in"):
+            print("DEBUG: Not logged in, redirecting")
+            return redirect("/")
+        
+        username = session.get("username")
+        print(f"DEBUG: Checking role for {username}")
+        
+        if username not in USERS:
+            print(f"DEBUG: {username} not in USERS")
+            return redirect("/")
+            
+        user_role = USERS[username].get("role")
+        print(f"DEBUG: user_role = {user_role}")
+        
+        if user_role not in ["admin", "owner"]:
+            print(f"DEBUG: Role {user_role} not admin/owner")
+            return redirect("/")
+        
+        print(f"DEBUG: Access granted for {username}")
+        return func(*args, **kwargs)
     return wrapper
 
 # --- Routes ---
-@app.route('/', methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        data = request.get_json()
-        username = data.get("username", "").lower()
-        password = data.get("password")
-        
-        # Check regular users
-        if username in USERS and USERS[username]["password"] == password:
-            session["logged_in"] = True
-            session["username"] = username
-            return jsonify({"status": "ok"})
-        
-        return jsonify({"status": "error", "msg": "Invalid credentials"}), 401
-    
+@app.route('/', methods=["GET"])
+def index():
     return send_from_directory('static', 'login.html')
+
+@app.route('/login', methods=["POST"])
+def login():
+    data = request.get_json()
+    username = data.get("username", "").lower()
+    password = data.get("password")
+    
+    if not username or not password:
+        return jsonify({"error": "Missing credentials"}), 400
+    
+    if username not in USERS or USERS[username]["password"] != password:
+        return jsonify({"error": "Invalid username or password"}), 401
+    
+    user = USERS[username]
+    session["logged_in"] = True
+    session["username"] = username
+    session["role"] = user.get("role", "user")
+    
+    role = user.get("role", "user")
+    if role in ["owner", "admin"]:
+        redirect_path = "/dashboard"
+    else:
+        redirect_path = "/status"
+    
+    return jsonify({
+        "message": "Login successful",
+        "redirect": redirect_path
+    })
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect("/")
 
-@app.route('/status')
-@login_required
-def status():
-    return send_from_directory('static', 'user_status.html')
-
-@app.route('/dash/dashboard/dashboard/dashboard/dashboard/dashboard')
+@app.route('/dashboard')
+@admin_required
 def dashboard():
     return send_from_directory('static', 'index.html')
 
-@app.route('/scanner/scanner/scanning/scammer/scanner/scanner')
+@app.route('/scanner')
+@admin_required
 def scanner():
     return send_from_directory('static', 'scanner.html')
 
-# Return all QR sessions for admin dashboard
-@app.route('/qrs')
+@app.route('/status')
+@login_required
+def user_status():
+    return send_from_directory('static', 'user_status.html')
+
+# API Routes
+@app.route('/qrs', methods=['GET'])
 def get_qrs():
     qrs = []
     for sid in sessions_data:
@@ -105,8 +148,7 @@ def get_qrs():
         })
     return jsonify(qrs)
 
-# Return user's own QR and status
-@app.route('/my_status')
+@app.route('/my_status', methods=['GET'])
 @login_required
 def my_status():
     username = session.get("username")
@@ -130,8 +172,8 @@ def my_status():
         })
     return jsonify({"error": "User not found"}), 404
 
-# --- Approve endpoint ---
 @app.route('/approve', methods=['POST'])
+@admin_required
 def approve():
     data = request.get_json()
     session_id = data.get("session_id")
@@ -147,7 +189,7 @@ def approve():
         return jsonify({"status": "approved"})
     return jsonify({"error": "invalid session"}), 400
 
-@app.route('/session_status/<session_id>')
+@app.route('/session_status/<session_id>', methods=['GET'])
 def session_status(session_id):
     sess = sessions_data.get(session_id)
     if not sess:
