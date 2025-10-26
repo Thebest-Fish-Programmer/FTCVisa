@@ -15,6 +15,26 @@
             color: #fff;
         }
 
+        h1 {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logout-btn {
+            padding: 8px 16px;
+            background: #ef4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .logout-btn:hover {
+            background: #dc2626;
+        }
+
         #qrsContainer {
             display: flex;
             flex-wrap: wrap;
@@ -61,61 +81,97 @@
             font-family: monospace;
             color: #888;
         }
+
+        .approve-btn {
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: #22c55e;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .approve-btn:hover {
+            background: #16a34a;
+        }
     </style>
 </head>
 
 <body>
-    <h1>FTC Visa Dashboard</h1>
+    <h1>
+        FTC Visa Dashboard
+        <button class="logout-btn" id="logoutBtn">Logout</button>
+    </h1>
     <div id="qrsContainer"></div>
 
     <script>
         const socket = io();
         const qrs = {}; // store QR data and timers
 
+        function logout() {
+            window.location.href = '/logout';
+        }
+
         async function loadQRs() {
-            const res = await fetch('/qrs');
-            const data = await res.json();
-            const container = document.getElementById('qrsContainer');
-            container.innerHTML = '';
+            try {
+                const res = await fetch('/qrs');
 
-            data.forEach(qr => {
-                const card = document.createElement('div');
-                card.className = 'qr-card';
-                card.id = `card-${qr.session_id}`;
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) {
+                        logout();
+                        return;
+                    }
+                    console.error('Error fetching QRs:', res.status);
+                    return;
+                }
 
-                const nameEl = document.createElement('div');
-                nameEl.className = 'name';
-                nameEl.innerText = qr.name;
+                const data = await res.json();
+                const container = document.getElementById('qrsContainer');
+                container.innerHTML = '';
 
-                const canvas = document.createElement('canvas');
-                QRCode.toCanvas(canvas, qr.url, { width: 150 });
+                data.forEach(qr => {
+                    const card = document.createElement('div');
+                    card.className = 'qr-card';
+                    card.id = `card-${qr.session_id}`;
 
-                const statusEl = document.createElement('div');
-                statusEl.className = 'status locked';
-                statusEl.id = `status-${qr.session_id}`;
-                statusEl.innerText = 'LOCKED';
+                    const nameEl = document.createElement('div');
+                    nameEl.className = 'name';
+                    nameEl.innerText = qr.name;
 
-                const timerEl = document.createElement('div');
-                timerEl.className = 'timer';
-                timerEl.id = `timer-${qr.session_id}`;
-                timerEl.innerText = '--:--';
+                    const canvas = document.createElement('canvas');
+                    QRCode.toCanvas(canvas, qr.url, { width: 150 });
 
-                card.appendChild(nameEl);
-                card.appendChild(canvas);
-                card.appendChild(statusEl);
-                card.appendChild(timerEl);
-                container.appendChild(card);
+                    const statusEl = document.createElement('div');
+                    statusEl.className = 'status locked';
+                    statusEl.id = `status-${qr.session_id}`;
+                    statusEl.innerText = 'LOCKED';
 
-                qrs[qr.session_id] = {
-                    name: qr.name,
-                    statusEl,
-                    timerEl,
-                    expiresAt: null,
-                    interval: null
-                };
+                    const timerEl = document.createElement('div');
+                    timerEl.className = 'timer';
+                    timerEl.id = `timer-${qr.session_id}`;
+                    timerEl.innerText = '--:--';
 
-                updateSessionStatus(qr.session_id);
-            });
+                    card.appendChild(nameEl);
+                    card.appendChild(canvas);
+                    card.appendChild(statusEl);
+                    card.appendChild(timerEl);
+                    container.appendChild(card);
+
+                    qrs[qr.session_id] = {
+                        name: qr.name,
+                        statusEl,
+                        timerEl,
+                        expiresAt: null,
+                        interval: null
+                    };
+
+                    updateSessionStatus(qr.session_id);
+                });
+            } catch (e) {
+                console.error('Fetch error:', e);
+            }
         }
 
         // Check backend for each QR session status
@@ -157,6 +213,36 @@
             }
         }
 
+        async function approveSession(session_id, duration) {
+            try {
+                const res = await fetch('/approve', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        session_id: session_id,
+                        duration: duration
+                    })
+                });
+
+                if (!res.ok) {
+                    if (res.status === 401 || res.status === 403) {
+                        logout();
+                        return;
+                    }
+                    console.error('Error approving session:', res.status);
+                    return;
+                }
+
+                const data = await res.json();
+                console.log('Approved:', data);
+                updateSessionStatus(session_id);
+            } catch (e) {
+                console.error('Approve error:', e);
+            }
+        }
+
         // Listen for real-time unlocks via socket.io
         socket.on('unlocked', msg => {
             if (qrs[msg.session_id]) {
@@ -164,6 +250,8 @@
                 updateSessionStatus(msg.session_id);
             }
         });
+
+        document.getElementById('logoutBtn').addEventListener('click', logout);
 
         loadQRs();
     </script>
